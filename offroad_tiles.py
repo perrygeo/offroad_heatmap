@@ -45,26 +45,29 @@ def seed_inputs(bounds, zooms):
         save_tile(*s)
         save_tile(*v)
 
+##################################################
+m = mapnik.Map(256, 256)
+m.srs = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +no_defs +over"
+s = mapnik.Style()
+r = mapnik.Rule()
+line_symbolizer = mapnik.LineSymbolizer(mapnik.Color('black'), 4)
+r.symbols.append(line_symbolizer)
+s.rules.append(r)
+m.append_style('RoadStyle', s)
+layer = mapnik.Layer('Roads from PostGIS')
+layer.srs = "+init=epsg:3857"
+ROADS = """
+    (SELECT way
+    FROM planet_osm_line
+    WHERE roadbiking = TRUE) linestring
+"""
+layer.datasource = mapnik.PostGIS(host='localhost', user='mperry', password='mperry',
+    dbname='osm_uswest', table=ROADS, geometry_field='way')
+layer.styles.append('RoadStyle')
+m.layers.append(layer)
+##################################################
+
 def vecttile_mask(jsonpath, bounds):
-    m = mapnik.Map(256, 256)
-    m.srs = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +no_defs +over"
-    # m.srs = "+init=epsg:3857"
-    #m.background = mapnik.Color('white')
-    s = mapnik.Style()
-    r = mapnik.Rule()
-    line_symbolizer = mapnik.LineSymbolizer(mapnik.Color('black'), 4)
-    r.symbols.append(line_symbolizer)
-    s.rules.append(r)
-    m.append_style('RoadStyle', s)
-
-    ds = mapnik.GeoJSON(file=jsonpath)
-    layer = mapnik.Layer('osmvect')
-    layer.srs = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
-    layer.datasource = ds
-    layer.styles.append('RoadStyle')
-
-    m.layers.append(layer)
-
     ll = mercantile.xy(bounds.west, bounds.south)
     ur = mercantile.xy(bounds.east, bounds.north)
     extent = mapnik.Box2d(*(ll + ur))
