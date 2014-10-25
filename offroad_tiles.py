@@ -46,38 +46,51 @@ def seed_inputs(bounds, zooms):
         save_tile(*v)
 
 ##################################################
-m = mapnik.Map(256, 256)
-m.srs = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +no_defs +over"
-s = mapnik.Style()
-r = mapnik.Rule()
-line_symbolizer = mapnik.LineSymbolizer(mapnik.Color('black'), 4)
-r.symbols.append(line_symbolizer)
-s.rules.append(r)
-m.append_style('RoadStyle', s)
-layer = mapnik.Layer('Roads from PostGIS')
-layer.srs = "+init=epsg:3857"
-ROADS = """
-    (SELECT way
-    FROM planet_osm_line
-    WHERE roadbiking = TRUE) linestring
-"""
-layer.datasource = mapnik.PostGIS(host='localhost', user='mperry', password='mperry',
-    dbname='osm_uswest', table=ROADS, geometry_field='way')
-layer.styles.append('RoadStyle')
-m.layers.append(layer)
+
 ##################################################
 
-def vecttile_mask(jsonpath, bounds):
+def vecttile_mask(tile, save_mask=True):
+    bounds = mercantile.bounds(tile.x, tile.y, tile.z)
     ll = mercantile.xy(bounds.west, bounds.south)
     ur = mercantile.xy(bounds.east, bounds.north)
     extent = mapnik.Box2d(*(ll + ur))
-    m.zoom_to_box(extent)  
 
-    # mapnik.render_to_file(m, pngpath, 'png')
-    # import ipdb; ipdb.set_trace()
+
+    m = mapnik.Map(256, 256)
+    m.srs = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +no_defs +over"
+    s = mapnik.Style()
+    r = mapnik.Rule()
+
+    road_width = 75 # meters
+    pixel_size = mercantile.pixel_size(tile.z, bounds.north)
+    pixels = int(road_width/pixel_size) + 1
+    line_symbolizer = mapnik.LineSymbolizer(mapnik.Color('black'), pixels)
+    r.symbols.append(line_symbolizer)
+    s.rules.append(r)
+    m.append_style('RoadStyle', s)
+    layer = mapnik.Layer('Roads from PostGIS')
+    layer.srs = "+init=epsg:3857"
+    ROADS = """
+        (SELECT way
+        FROM planet_osm_line
+        WHERE roadbiking = TRUE) linestring
+    """
+    layer.datasource = mapnik.PostGIS(host='localhost', user='mperry', password='mperry',
+        dbname='osm_uswest', table=ROADS, geometry_field='way')
+    layer.styles.append('RoadStyle')
+    m.layers.append(layer)
+
+
+
+
+    m.zoom_to_box(extent)
 
     img = mapnik.Image(m.width, m.height)
     mapnik.render(m, img)
+    imgpath = tile_path(os.path.join(tiledir, 'mask'), tile, 'png')
+    prep_dirs(imgpath)
+    if save_mask:
+        img.save(imgpath)
 
     imgdata = np.frombuffer(img.tostring(), dtype=np.uint8).reshape((256, 256, 4))
 
@@ -108,10 +121,7 @@ def adjust_alpha(rgba, mask):
 
 
 def render_offroad_tile(tile):
-    mask = vecttile_mask(
-        tile_path(os.path.join(tiledir, 'osm'), tile, 'json'), 
-        mercantile.bounds(tile.x, tile.y, tile.z)
-    )
+    mask = vecttile_mask(tile)
     heatmap = heatmap_array(tile_path(os.path.join(tiledir, 'strava'), tile, 'png'))
     mod = adjust_alpha(heatmap.copy(), mask)
     path = tile_path(os.path.join(tiledir, 'offroad'), tile, 'png')
@@ -135,9 +145,9 @@ def make_tile(x, y, z):
 
     # cache inputs
     s = tile_url(strava, tile), tile_path(os.path.join(tiledir, 'strava'), tile, 'png')
-    v = tile_url(osm_vect, tile), tile_path(os.path.join(tiledir, 'osm'), tile, 'json')
+    #v = tile_url(osm_vect, tile), tile_path(os.path.join(tiledir, 'osm'), tile, 'json')
     save_tile(*s)
-    save_tile(*v)
+    #save_tile(*v)
 
     # cache outputs
     return render_offroad_tile(tile)
